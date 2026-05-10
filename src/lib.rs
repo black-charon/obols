@@ -10,6 +10,7 @@ mod error;
 mod string;
 
 pub mod prelude {
+    pub use crate::error::Error;
     pub use crate::string::String;
 }
 
