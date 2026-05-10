@@ -1,19 +1,4 @@
 //! A Standard Library for Black Charon
-//!
-#![no_std]
-#![feature(portable_simd)]
-#![feature(const_trait_impl)]
-#![feature(maybe_uninit_slice)]
-#![feature(core_intrinsics)]
+#![feature(error_generic_member_access)]
 
-mod error;
-mod string;
-
-pub mod prelude {
-    pub use crate::error::Error;
-    pub use crate::string::String;
-}
-
-pub mod internal {
-    pub trait Sealed {}
-}
+pub mod error;
