@@ -1,35 +1,38 @@
-use std::fmt;
-use std::error::{Error, Request};
-use std::panic::Location;
+//! # Obol Error System
+//!
+//! Ce module fournit une infrastructure d'erreur de grade industriel pour l'écosystème Obol.
+//! Il combine la flexibilité de la `std` avec la rigueur des systèmes bas-niveau via :
+//!
+//! - **Codes Hexadécimaux** : Identifiants uniques pour le monitoring et le debugging.
+//! - **GAT v2 (Nightly 1.97)** : Gestion précise des durées de vie via `ErrorContextExt`.
+//! - **Capture de Précision** : Utilisation de `track_caller` pour localiser l'erreur.
+//! - **Idiomes Rust** : API familière inspirée de `anyhow` mais avec une typologie stricte.
 
-// --- REGISTRE DES ERREURS (L'UNIQUE SOURCE DE VÉRITÉ) ---
+use core::fmt;
+use core::error::{Error, Request};
+use core::panic::Location;
 
+// --- REGISTRE DES ERREURS ---
+
+/// Définit les capacités d'un type pouvant servir de diagnostic d'erreur.
 pub trait Diagnostic {
+    /// Retourne le code hexadécimal unique de l'erreur (ex: 0x1001).
     fn code(&self) -> u32;
+    /// Retourne la catégorie métier de l'erreur.
     fn kind(&self) -> ErrorKind;
 }
 
-
 /// Macro déclarative pour enregistrer des erreurs de façon centralisée.
-/// 
-/// # Example
-/// ```
-/// register_errors! {
-///     MyErrors {
-///         Boom => (0x9999, Internal),
-///     }
-/// }
-/// ```
-#[macro_export]
 macro_rules! register_errors {
     (
         $name:ident {
             $($variant:ident => ($code:expr, $kind:ident)),* $(,)?
         }
     ) => {
+        #[doc = "Enumération générée des définitions d'erreurs."]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum $name {
-            $($variant),*
+            $( #[doc = "Erreur de type"] $variant ),*
         }
 
         impl $crate::error::Diagnostic for $name {
@@ -43,26 +46,30 @@ macro_rules! register_errors {
     };
 }
 
-// Définition de tes domaines d'erreurs
+// Enregistrement des domaines par défaut
 register_errors! {
     ErrorDef {
-        // Validation (0x1xxx)
+        /// Erreur de validation de données (0x1xxx).
         InvalidSku     => (0x1001, Validation),
+        /// Erreur liée aux montants ou devises.
         InvalidPrice   => (0x1002, Validation),
-        // Trade (0x2xxx)
+        /// Rupture de stock ou inventaire manquant (0x2xxx).
         StockEmpty     => (0x2001, Trade),
+        /// Échec de la transaction monétaire.
         PaymentFailed  => (0x2002, Trade),
-        // Database (0x3xxx)
+        /// Corruption du Write-Ahead Log (0x3xxx).
         WalCorrupted   => (0x3001, Database),
-        // Système (0xFxxx)
+        /// Erreur imprévue du système (0xFxxx).
         InternalError  => (0xF001, Internal),
     }
 }
 
 // --- TYPES DE BASE ---
 
+/// Alias Result universel pour l'écosystème Obol.
 pub type Result<T, E = ErrorReport> = core::result::Result<T, E>;
 
+/// Catégories majeures d'erreurs pour le routage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
     Validation,
@@ -79,12 +86,18 @@ impl fmt::Display for ErrorKind {
 
 // --- LE RAPPORT D'ERREUR (REPORT) ---
 
+/// Structure principale transportant l'information d'erreur.
 #[derive(Debug)]
 pub struct ErrorReport {
+    /// Code diagnostic unique (ex: 0x10A2).
     pub code: u32,
+    /// Catégorie de l'erreur.
     pub kind: ErrorKind,
+    /// Message contextuel décrivant l'échec.
     pub message: String,
+    /// Localisation exacte de la levée de l'erreur dans le code source.
     pub location: &'static Location<'static>,
+    /// Erreur parente ayant causé cet échec.
     pub source: Option<Box<dyn Error + Send + Sync>>,
 }
 
@@ -112,6 +125,7 @@ impl fmt::Display for ErrorReport {
 }
 
 impl ErrorReport {
+    /// Construit un nouveau rapport d'erreur.
     #[track_caller]
     #[cold]
     pub fn build(kind: ErrorKind, code: u32, message: String, source: Option<Box<dyn Error + Send + Sync>>) -> Self {
@@ -127,10 +141,19 @@ impl ErrorReport {
 
 // --- EXTENSION TRAIT (GAT V2) ---
 
+/// Trait d'extension pour ajouter du contexte aux `Result` et `Option`.
 pub trait ErrorContextExt<T> {
+    /// Type de sortie utilisant les Generic Associated Types.
     type Out<'a> where Self: 'a;
 
-    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'static>
+    /// Ajoute un contexte d'erreur de façon paresseuse. La closure n'est exécutée
+    /// qu'en cas d'erreur.
+    ///
+    /// # Exemple
+    /// ```
+    /// let sku = parse(input).with_context(error!(ErrorDef::InvalidSku, "Format incorrect"));
+    /// ```
+    fn with_context<F, S>(self, f: F) -> Self::Out<'static>
     where
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>;
@@ -142,7 +165,7 @@ where
 {
     type Out<'a> = Result<T> where Self: 'a;
 
-    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'static>
+    fn with_context<F, S>(self, f: F) -> Self::Out<'static>
     where
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>,
@@ -157,7 +180,7 @@ where
 impl<T> ErrorContextExt<T> for Option<T> {
     type Out<'a> = Result<T> where Self: 'a;
 
-    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'static>
+    fn with_context<F, S>(self, f: F) -> Self::Out<'static>
     where
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>,
@@ -171,6 +194,7 @@ impl<T> ErrorContextExt<T> for Option<T> {
 
 // --- MACROS D'USAGE ---
 
+/// Prépare une closure d'erreur pour `with_context`.
 #[macro_export]
 macro_rules! error {
     ($def:expr, $fmt:expr $(, $arg:tt)*) => {
@@ -181,6 +205,7 @@ macro_rules! error {
     };
 }
 
+/// Provoque une sortie immédiate de la fonction avec une erreur Obol.
 #[macro_export]
 macro_rules! bail {
     ($def:expr, $fmt:expr $(, $arg:tt)*) => {
