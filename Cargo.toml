@@ -1,0 +1,7 @@
+[package]
+name = "obols"
+description = "A Standard Library for Black Charon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
