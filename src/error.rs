@@ -8,8 +8,8 @@
 //! - **Capture de Précision** : Utilisation de `track_caller` pour localiser l'erreur.
 //! - **Idiomes Rust** : API familière inspirée de `anyhow` mais avec une typologie stricte.
 
-use core::fmt;
 use core::error::{Error, Request};
+use core::fmt;
 use core::panic::Location;
 
 // --- REGISTRE DES ERREURS ---
@@ -22,17 +22,24 @@ pub trait Diagnostic {
     fn kind(&self) -> ErrorKind;
 }
 
-/// Macro déclarative pour enregistrer des erreurs de façon centralisée.
+#[macro_export]
 macro_rules! register_errors {
     (
+        $(#[$enum_meta:meta])*
         $name:ident {
-            $($variant:ident => ($code:expr, $kind:ident)),* $(,)?
+            $(
+                $(#[$variant_meta:meta])* // Capture les doc comments ///
+                $variant:ident => ($code:expr, $kind:ident)
+            ),* $(,)?
         }
     ) => {
-        #[doc = "Enumération générée des définitions d'erreurs."]
+        $(#[$enum_meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum $name {
-            $( #[doc = "Erreur de type"] $variant ),*
+            $(
+                $(#[$variant_meta])*
+                $variant
+            ),*
         }
 
         impl $crate::error::Diagnostic for $name {
@@ -115,7 +122,11 @@ impl Error for ErrorReport {
 
 impl fmt::Display for ErrorReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[ERR:{:#06X}] {} -> {}", self.code, self.kind, self.message)?;
+        write!(
+            f,
+            "[ERR:{:#06X}] {} -> {}",
+            self.code, self.kind, self.message
+        )?;
         write!(f, " (at {}:{})", self.location.file(), self.location.line())?;
         if let Some(ref src) = self.source {
             write!(f, " | Source: {}", src)?;
@@ -128,7 +139,12 @@ impl ErrorReport {
     /// Construit un nouveau rapport d'erreur.
     #[track_caller]
     #[cold]
-    pub fn build(kind: ErrorKind, code: u32, message: String, source: Option<Box<dyn Error + Send + Sync>>) -> Self {
+    pub fn build(
+        kind: ErrorKind,
+        code: u32,
+        message: String,
+        source: Option<Box<dyn Error + Send + Sync>>,
+    ) -> Self {
         Self {
             code,
             kind,
@@ -144,7 +160,9 @@ impl ErrorReport {
 /// Trait d'extension pour ajouter du contexte aux `Result` et `Option`.
 pub trait ErrorContextExt<T> {
     /// Type de sortie utilisant les Generic Associated Types.
-    type Out<'a> where Self: 'a;
+    type Out<'a>
+    where
+        Self: 'a;
 
     /// Ajoute un contexte d'erreur de façon paresseuse. La closure n'est exécutée
     /// qu'en cas d'erreur.
@@ -163,7 +181,10 @@ impl<T, E> ErrorContextExt<T> for std::result::Result<T, E>
 where
     E: Error + Send + Sync + 'static,
 {
-    type Out<'a> = Result<T> where Self: 'a;
+    type Out<'a>
+        = Result<T>
+    where
+        Self: 'a;
 
     fn with_context<F, S>(self, f: F) -> Self::Out<'static>
     where
@@ -178,7 +199,10 @@ where
 }
 
 impl<T> ErrorContextExt<T> for Option<T> {
-    type Out<'a> = Result<T> where Self: 'a;
+    type Out<'a>
+        = Result<T>
+    where
+        Self: 'a;
 
     fn with_context<F, S>(self, f: F) -> Self::Out<'static>
     where
