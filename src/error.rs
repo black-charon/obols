@@ -62,7 +62,11 @@ impl core::fmt::Display for ErrorReport {
 pub trait ErrorContextExt<T> {
     type Out<'a> where Self: 'a;
 
-    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'static>
+    /// Pour les contextes statiques (Zéro allocation de closure)
+    fn context(self, kind: ErrorKind, code: u32, msg: &'static str) -> Self::Out<'_>;
+
+    /// Pour les messages dynamiques construits uniquement en cas d'erreur
+    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'_>
     where
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>;
@@ -74,7 +78,16 @@ where
 {
     type Out<'a> = Result<T, ErrorReport> where Self: 'a;
 
-    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'static>
+    fn context(self, kind: ErrorKind, code: u32, msg: &'static str) -> Self::Out<'_> {
+        self.map_err(|e| ErrorReport {
+            code,
+            kind,
+            message: msg.to_string(),
+            source: Some(Box::new(e)),
+        })
+    }
+
+    fn with_lazy_context<F, S>(self, f: F) -> Self::Out<'_>
     where
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>,
@@ -90,6 +103,7 @@ where
         })
     }
 }
+
 
 // Implémentation pour Option
 impl<T> ErrorContextExt<T> for Option<T> {
