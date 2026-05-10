@@ -52,3 +52,9 @@ impl<const N: usize> Default for String<N> {
         Self::new()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+}
