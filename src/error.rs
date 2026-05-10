@@ -159,20 +159,15 @@ impl ErrorReport {
 
 /// Trait d'extension pour ajouter du contexte aux `Result` et `Option`.
 pub trait ErrorContextExt<T> {
-    /// Type de sortie utilisant les Generic Associated Types.
     type Out<'a>
     where
         Self: 'a;
 
-    /// Ajoute un contexte d'erreur de façon paresseuse. La closure n'est exécutée
-    /// qu'en cas d'erreur.
-    ///
-    /// # Exemple
-    /// ```
-    /// let sku = parse(input).with_context(error!(ErrorDef::InvalidSku, "Format incorrect"));
-    /// ```
-    fn with_context<F, S>(self, f: F) -> Self::Out<'static>
+    /// On définit 'a explicitement pour lier self et la sortie.
+    #[track_caller]
+    fn with_context<'a, F, S>(self, f: F) -> Self::Out<'a>
     where
+        Self: 'a, // Crucial : indique que Self est valide pour 'a
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>;
 }
@@ -186,13 +181,16 @@ where
     where
         Self: 'a;
 
-    fn with_context<F, S>(self, f: F) -> Self::Out<'static>
+    #[track_caller]
+    fn with_context<'a, F, S>(self, f: F) -> Self::Out<'a>
     where
+        Self: 'a,
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>,
     {
         self.map_err(|e| {
             let (kind, code, msg) = f();
+            // L'appel à build() capture l'appelant grâce au #[track_caller] du trait
             ErrorReport::build(kind, code, msg.into(), Some(Box::new(e)))
         })
     }
@@ -204,8 +202,10 @@ impl<T> ErrorContextExt<T> for Option<T> {
     where
         Self: 'a;
 
-    fn with_context<F, S>(self, f: F) -> Self::Out<'static>
+    #[track_caller]
+    fn with_context<'a, F, S>(self, f: F) -> Self::Out<'a>
     where
+        Self: 'a,
         F: FnOnce() -> (ErrorKind, u32, S),
         S: Into<String>,
     {
