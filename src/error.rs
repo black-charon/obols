@@ -241,3 +241,90 @@ macro_rules! bail {
         ))
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_registration() {
+        // Vérifie que la macro register_errors! a bien généré les codes et catégories
+        assert_eq!(ErrorDef::InvalidSku.code(), 0x1001);
+        assert_eq!(ErrorDef::InvalidSku.kind(), ErrorKind::Validation);
+        
+        assert_eq!(ErrorDef::WalCorrupted.code(), 0x3001);
+        assert_eq!(ErrorDef::WalCorrupted.kind(), ErrorKind::Database);
+    }
+
+    #[test]
+    fn test_bail_macro() {
+        fn produce_error() -> Result<()> {
+            bail!(ErrorDef::InternalError, "une erreur critique s'est produite: {}", "CPU_OVERHEAT");
+        }
+
+        let res = produce_error();
+        assert!(res.is_err());
+        
+        let report = res.unwrap_err();
+        assert_eq!(report.code, 0xF001);
+        assert_eq!(report.kind, ErrorKind::Internal);
+        assert!(report.message.contains("une erreur critique s'est produite: CPU_OVERHEAT"));
+        // Vérifie que la localisation pointe bien vers ce fichier de test
+        assert!(report.location.file().contains("tests"));
+    }
+
+    #[test]
+    fn test_with_context_on_result() {
+        // Simule une erreur standard (io::Error)
+        let standard_io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        
+        let res: Result<()> = Err(standard_io_err).with_context(error!(
+            ErrorDef::Database,
+            "échec du chargement de la table {}", 
+            "users"
+        ));
+
+        assert!(res.is_err());
+        let report = res.unwrap_err();
+        
+        assert_eq!(report.code, 0x3001); // WalCorrupted ou Database
+        assert!(report.source.is_some()); // Vérifie que l'erreur source est préservée
+        assert!(report.message.contains("échec du chargement de la table users"));
+    }
+
+    #[test]
+    fn test_with_context_on_option() {
+        let none_val: Option<i32> = None;
+        
+        let res = none_val.with_context(error!(
+            ErrorDef::StockEmpty,
+            "article {} introuvable",
+            404
+        ));
+
+        assert!(res.is_err());
+        let report = res.unwrap_err();
+        assert_eq!(report.code, 0x2001);
+        assert_eq!(report.kind, ErrorKind::Trade);
+        assert!(report.source.is_none()); // Pas de source pour une conversion d'Option
+    }
+
+    #[test]
+    fn test_provide_api() {
+        use core::error::request_value;
+
+        let report = ErrorReport::build(
+            ErrorKind::Validation,
+            0x1234,
+            "test provide".into(),
+            None,
+        );
+
+        // Test de l'API de diagnostic via provide
+        let code = request_value::<u32>(&report);
+        let kind = request_value::<ErrorKind>(&report);
+
+        assert_eq!(code, Some(0x1234));
+        assert_eq!(kind, Some(ErrorKind::Validation));
+    }
+}
