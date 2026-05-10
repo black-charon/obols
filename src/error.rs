@@ -9,6 +9,18 @@ pub trait Diagnostic {
     fn kind(&self) -> ErrorKind;
 }
 
+
+/// Macro déclarative pour enregistrer des erreurs de façon centralisée.
+/// 
+/// # Example
+/// ```
+/// register_errors! {
+///     MyErrors {
+///         Boom => (0x9999, Internal),
+///     }
+/// }
+/// ```
+#[macro_export]
 macro_rules! register_errors {
     (
         $name:ident {
