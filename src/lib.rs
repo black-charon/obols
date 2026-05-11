@@ -13,6 +13,7 @@
 #![feature(lazy_type_alias)]
 
 pub mod error;
+pub mod primitives;
 
 pub use crate::error::{ErrorContextExt, ErrorDef, ErrorKind, ErrorReport, Result};
 

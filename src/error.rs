@@ -255,15 +255,15 @@ macro_rules! error {
     };
 }
 
-/// Provoque une sortie immédiate de la fonction avec une erreur Obol.
 #[macro_export]
 macro_rules! bail {
-    ($def:expr, $fmt:expr $(, $arg:tt)*) => {
-       return Err($crate::error::ErrorReport::build(
-        $def.kind(),
-        $def.code(),
-        format!($fmt $(, $arg)*),
-        None // Pas de source pour un bail! initial
+    ($def:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
+        use crate::error::Diagnostic;
+        return Err($crate::error::ErrorReport::build(
+            $def.kind(),
+            $def.code(),
+            format!($fmt $(, $arg)*),
+            None
         ))
     };
 }
