@@ -12,6 +12,8 @@ use core::error::{Error, Request};
 use core::fmt;
 use core::panic::Location;
 
+use serde::{Deserialize, Serialize};
+
 // --- REGISTRE DES ERREURS ---
 
 /// Définit les capacités d'un type pouvant servir de diagnostic d'erreur.
@@ -78,7 +80,7 @@ register_errors! {
 pub type Result<T, E = ErrorReport> = core::result::Result<T, E>;
 
 /// Catégories majeures d'erreurs pour le routage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorKind {
     Validation,
     Trade,
@@ -92,10 +94,8 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-// --- LE RAPPORT D'ERREUR (REPORT) ---
-
 /// Structure principale transportant l'information d'erreur.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorReport {
     /// Code diagnostic unique (ex: 0x10A2).
     pub code: u32,
@@ -103,10 +103,56 @@ pub struct ErrorReport {
     pub kind: ErrorKind,
     /// Message contextuel décrivant l'échec.
     pub message: String,
-    /// Localisation exacte de la levée de l'erreur dans le code source.
-    pub location: &'static Location<'static>,
-    /// Erreur parente ayant causé cet échec.
-    pub source: Option<Box<dyn Error + Send + Sync>>,
+    /// Pour la sérialisation, on stocke le chemin en String
+    pub file: String,
+    pub line: u32,
+    pub col: u32,
+    /// L'erreur parente (ignorée par Serde car non-désérialisable facilement)
+    #[serde(skip)]
+    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    /// La référence de localisation originale (ignorée par Serde)
+    #[serde(skip)]
+    pub location: Option<&'static std::panic::Location<'static>>,
+}
+
+impl ErrorReport {
+    /// Construit un nouveau rapport d'erreur.
+    #[track_caller]
+    #[cold]
+    pub fn build(
+        kind: ErrorKind,
+        code: u32,
+        message: String,
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Self {
+        let caller = Location::caller();
+        Self {
+            code,
+            kind,
+            message,
+            file: caller.file().to_string(),
+            line: caller.line(),
+            col: caller.column(),
+            location: Some(caller),
+            source,
+        }
+    }
+
+    pub fn to_json_object(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or_else(|_| {
+            serde_json::json!({ "error": "failed to serialize error report" })
+        })
+    }
+
+    /// Transforme le rapport en un objet JSON sécurisé pour les clients externes.
+    /// Filtre les informations sensibles comme la localisation du code.
+    pub fn to_public_json_object(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": format!("{:#06X}", self.code),
+            "kind": self.kind,
+            "message": self.message,
+        })
+    }
 }
 
 impl Error for ErrorReport {
@@ -128,31 +174,13 @@ impl fmt::Display for ErrorReport {
             "[ERR:{:#06X}] {} -> {}",
             self.code, self.kind, self.message
         )?;
-        write!(f, " (at {}:{})", self.location.file(), self.location.line())?;
+
+        write!(f, " (at {}:{})", self.file, self.line)?;
+
         if let Some(ref src) = self.source {
             write!(f, " | Source: {}", src)?;
         }
         Ok(())
-    }
-}
-
-impl ErrorReport {
-    /// Construit un nouveau rapport d'erreur.
-    #[track_caller]
-    #[cold]
-    pub fn build(
-        kind: ErrorKind,
-        code: u32,
-        message: String,
-        source: Option<Box<dyn Error + Send + Sync>>,
-    ) -> Self {
-        Self {
-            code,
-            kind,
-            message,
-            location: Location::caller(),
-            source,
-        }
     }
 }
 
@@ -234,11 +262,11 @@ macro_rules! error {
 #[macro_export]
 macro_rules! bail {
     ($def:expr, $fmt:expr $(, $arg:tt)*) => {
-        return Err($crate::error::ErrorReport::build(
-            $def.kind(),
-            $def.code(),
-            format!($fmt $(, $arg)*),
-            None
+       return Err($crate::error::ErrorReport::build(
+        $def.kind(),
+        $def.code(),
+        format!($fmt $(, $arg)*),
+        None // Pas de source pour un bail! initial
         ))
     };
 }
@@ -278,8 +306,15 @@ mod tests {
                 .message
                 .contains("une erreur critique s'est produite: CPU_OVERHEAT")
         );
-        // Vérifie que la localisation pointe bien vers ce fichier de test
-        assert!(report.location.file().contains("error.rs"));
+
+        // OPTION A: Vérifier via le champ String (Recommandé pour Obol)
+        // C'est ce champ qui voyagera entre tes microservices.
+        assert!(report.file.contains("error.rs"));
+        assert!(report.line > 0);
+
+        // OPTION B: Vérifier via l'Option location (si tu veux être ultra précis en local)
+        // On doit unwrap() car c'est une Option désormais.
+        assert!(report.location.unwrap().file().contains("error.rs"));
     }
 
     #[test]
@@ -331,4 +366,27 @@ mod tests {
         assert_eq!(code, Some(0x1234));
         assert_eq!(kind, Some(ErrorKind::Validation));
     }
+
+    #[test]
+    fn test_to_json_object() {
+        let report = ErrorReport::build(
+            ErrorKind::Trade,
+            0x2001,
+            "Rupture de stock".into(),
+            None,
+        );
+
+        let obj = report.to_json_object();
+        
+        // On vérifie que les champs critiques sont là
+        assert_eq!(obj["code"], 0x2001);
+        assert_eq!(obj["kind"], "Trade");
+        assert!(obj["file"].is_string());
+        
+        // Test de la version publique (sécurité)
+        let public_obj = report.to_public_json_object();
+        assert_eq!(public_obj["code"], "0x2001");
+        assert!(public_obj.get("file").is_none()); // On vérifie l'absence de données sensibles
+        println!("{}", public_obj);
+        }
 }
