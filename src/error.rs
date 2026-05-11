@@ -65,9 +65,10 @@ register_errors! {
         /// Échec de la transaction monétaire.
         PaymentFailed  => (0x2002, Trade),
         /// Corruption du Write-Ahead Log (0x3xxx).
-        WalCorrupted   => (0x3001, Database),
+        Database   => (0x3001, Database),
         /// Erreur imprévue du système (0xFxxx).
         InternalError  => (0xF001, Internal),
+
     }
 }
 
@@ -251,56 +252,64 @@ mod tests {
         // Vérifie que la macro register_errors! a bien généré les codes et catégories
         assert_eq!(ErrorDef::InvalidSku.code(), 0x1001);
         assert_eq!(ErrorDef::InvalidSku.kind(), ErrorKind::Validation);
-        
-        assert_eq!(ErrorDef::WalCorrupted.code(), 0x3001);
-        assert_eq!(ErrorDef::WalCorrupted.kind(), ErrorKind::Database);
+
+        assert_eq!(ErrorDef::Database.code(), 0x3001);
+        assert_eq!(ErrorDef::Database.kind(), ErrorKind::Database);
     }
 
     #[test]
     fn test_bail_macro() {
         fn produce_error() -> Result<()> {
-            bail!(ErrorDef::InternalError, "une erreur critique s'est produite: {}", "CPU_OVERHEAT");
+            bail!(
+                ErrorDef::InternalError,
+                "une erreur critique s'est produite: {}",
+                "CPU_OVERHEAT"
+            );
         }
 
         let res = produce_error();
         assert!(res.is_err());
-        
+
         let report = res.unwrap_err();
         assert_eq!(report.code, 0xF001);
         assert_eq!(report.kind, ErrorKind::Internal);
-        assert!(report.message.contains("une erreur critique s'est produite: CPU_OVERHEAT"));
+        assert!(
+            report
+                .message
+                .contains("une erreur critique s'est produite: CPU_OVERHEAT")
+        );
         // Vérifie que la localisation pointe bien vers ce fichier de test
-        assert!(report.location.file().contains("tests"));
+        assert!(report.location.file().contains("error.rs"));
     }
 
     #[test]
     fn test_with_context_on_result() {
         // Simule une erreur standard (io::Error)
         let standard_io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        
+
         let res: Result<()> = Err(standard_io_err).with_context(error!(
             ErrorDef::Database,
-            "échec du chargement de la table {}", 
-            "users"
+            "échec du chargement de la table {}", "users"
         ));
 
         assert!(res.is_err());
         let report = res.unwrap_err();
-        
+
         assert_eq!(report.code, 0x3001); // WalCorrupted ou Database
         assert!(report.source.is_some()); // Vérifie que l'erreur source est préservée
-        assert!(report.message.contains("échec du chargement de la table users"));
+        assert!(
+            report
+                .message
+                .contains("échec du chargement de la table users")
+        );
     }
 
     #[test]
     fn test_with_context_on_option() {
         let none_val: Option<i32> = None;
-        
-        let res = none_val.with_context(error!(
-            ErrorDef::StockEmpty,
-            "article {} introuvable",
-            404
-        ));
+
+        let res =
+            none_val.with_context(error!(ErrorDef::StockEmpty, "article {} introuvable", 404));
 
         assert!(res.is_err());
         let report = res.unwrap_err();
@@ -313,12 +322,7 @@ mod tests {
     fn test_provide_api() {
         use core::error::request_value;
 
-        let report = ErrorReport::build(
-            ErrorKind::Validation,
-            0x1234,
-            "test provide".into(),
-            None,
-        );
+        let report = ErrorReport::build(ErrorKind::Validation, 0x1234, "test provide".into(), None);
 
         // Test de l'API de diagnostic via provide
         let code = request_value::<u32>(&report);
