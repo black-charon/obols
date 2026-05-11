@@ -73,4 +73,3 @@ mod tests {
         println!("{}", sku)
     }
 }
-
