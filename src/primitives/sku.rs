@@ -1,7 +1,7 @@
 use crate::{ErrorDef, ErrorReport, bail, error::Result};
 
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sku<const N: usize = 16>([u8; N]);
 
 impl<const N: usize> Sku<N> {

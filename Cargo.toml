@@ -1,8 +1,13 @@
 [package]
-name = "obols"
+name = "bc-obols"
+authors = ["Black Charon Teams"]
 description = "A Standard Library for Black Charon"
 version = "0.1.0"
 edition = "2024"
+
+[lib]
+name = "obols"
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
