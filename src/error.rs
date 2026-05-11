@@ -14,8 +14,6 @@ use core::panic::Location;
 
 use serde::{Deserialize, Serialize};
 
-// --- REGISTRE DES ERREURS ---
-
 /// Définit les capacités d'un type pouvant servir de diagnostic d'erreur.
 pub trait Diagnostic {
     /// Retourne le code hexadécimal unique de l'erreur (ex: 0x1001).
@@ -139,9 +137,8 @@ impl ErrorReport {
     }
 
     pub fn to_json_object(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or_else(|_| {
-            serde_json::json!({ "error": "failed to serialize error report" })
-        })
+        serde_json::to_value(self)
+            .unwrap_or_else(|_| serde_json::json!({ "error": "failed to serialize error report" }))
     }
 
     /// Transforme le rapport en un objet JSON sécurisé pour les clients externes.
@@ -369,24 +366,19 @@ mod tests {
 
     #[test]
     fn test_to_json_object() {
-        let report = ErrorReport::build(
-            ErrorKind::Trade,
-            0x2001,
-            "Rupture de stock".into(),
-            None,
-        );
+        let report = ErrorReport::build(ErrorKind::Trade, 0x2001, "Rupture de stock".into(), None);
 
         let obj = report.to_json_object();
-        
+
         // On vérifie que les champs critiques sont là
         assert_eq!(obj["code"], 0x2001);
         assert_eq!(obj["kind"], "Trade");
         assert!(obj["file"].is_string());
-        
+
         // Test de la version publique (sécurité)
         let public_obj = report.to_public_json_object();
         assert_eq!(public_obj["code"], "0x2001");
         assert!(public_obj.get("file").is_none()); // On vérifie l'absence de données sensibles
         println!("{}", public_obj);
-        }
+    }
 }
