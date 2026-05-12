@@ -40,54 +40,58 @@ where
     }
 }
 
-pub struct Diagnostic<'a, const ID: u32, T>
+pub struct Diagnostic<'a, T>
 where
     T: const AsDiagnosticId,
-    [(); const { (ID < 0xFFFF) as usize }]:,
+    [(); const { (T::as_u32() < 0xFFFF) as usize }]:,
 {
-    /// Les données brutes liées à l'ID constant de T
-    pub inner: RawDiagnostic<'a, ID>,
-    /// Un marqueur pour conserver le lien avec le type d'erreur d'origine
-    _marker: std::marker::PhantomData<T>,
+    pub inner: RawDiagnostic<'a, { T::as_u32() }>, 
+    _marker: PhantomData<T>, // Utilisation stricte de core::marker::PhantomData
 }
 
-impl<'a, const ID: u32, T> Diagnostic<'a, ID, T>
+impl<'a, T> Diagnostic<'a, T>
 where
     T: const AsDiagnosticId,
-    [(); const { (ID < 0xFFFF) as usize }]:,
+    [(); const { (T::as_u32() < 0xFFFF) as usize }]:,
 {
     #[track_caller]
     pub fn new() -> Self {
         Self {
             inner: RawDiagnostic::new(),
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    // Import de std uniquement pour les macros de test comme println!
+    extern crate std; 
     use super::*;
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum MyError {
+        VariantA,
+        VariantB,
+    }
+
+    impl const AsDiagnosticId for MyError {
+        type Id = u32;
+
+        const ID: Self::Id = 0x1234;
+
+        fn as_u32() -> u32 {
+            Self::ID
+        }
+    }
 
     #[test]
     fn test_diagnostic() {
-        #[derive(Debug, Clone, Copy)]
-        pub enum MyError {
-            VariantA,
-            VariantB,
-        }
-
-        impl const AsDiagnosticId for MyError {
-            type Id = u32;
-
-            const ID: Self::Id = 0x1234;
-
-            fn as_u32() -> u32 {
-                Self::ID
-            }
-        }
-        let diag = Diagnostic::<0x1234, MyError>::new();
+        // L'appel est maintenant beaucoup plus élégant :
+        // Plus besoin de dupliquer l'ID <0x1234, MyError> !
+        let diag = Diagnostic::<MyError>::new();
+        
         assert_eq!(diag.inner.code, 0x1234);
-        println!("Diagnostic created at: {:?}", diag.inner.location);
+        std::println!("Diagnostic created at: {:?}", diag.inner.location);
     }
 }
