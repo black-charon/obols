@@ -21,13 +21,13 @@ macro_rules! new_error {
                 const ID: u32 = $code;
             }
 
-            impl $variant {
-                #[track_caller]
-                pub const fn emit() -> $crate::diagnostic::ModuleDiagnostic<{$module}, Self> {
-                    // Ici aussi, on utilise $crate pour la cohérence
-                    $crate::diagnostic::ModuleDiagnostic::new()
-                }
-            }
+  impl $variant {
+    #[track_caller]
+    // MAGIE : On passe l'ID du module en le castant as u32 directement dans le const generic !
+    pub const fn emit() -> $crate::diagnostic::ModuleDiagnostic<{ $module as u32 }, Self> {
+        $crate::diagnostic::ModuleDiagnostic::new()
+    }
+}
         )*
 
         impl $name {
