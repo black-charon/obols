@@ -1,51 +1,48 @@
-
-///
 #[macro_export]
-macro_rules! new_module_error {
+macro_rules! new_error {
     (
-        $(#[$enum_meta:meta])*
+        module = $module:expr,
         $name:ident {
-            $(
-                $(#[$variant_meta:meta])*
-                $variant:ident => ($code:expr, $kind:ident)
-            ),* $(,)?
+            $($variant:ident => $code:expr),* $(,)?
         }
     ) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum ErrorKind {
-            $($kind),*
-        }
-
-        $(#[$enum_meta])*
+        // Définition de l'enum de confort
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum $name {
-            $(
-                $(#[$variant_meta])*
-                $variant
-            ),*
+            $($variant),*
         }
+
+        $(
+            #[allow(non_camel_case_types)]
+            pub struct $variant;
+
+            // Utilisation du chemin absolu via $crate
+            impl const $crate::diagnostic::AsDiagnosticId for $variant {
+                const ID: u32 = $code;
+            }
+
+            impl $variant {
+                #[track_caller]
+                pub const fn emit() -> $crate::diagnostic::ModuleDiagnostic<{$module}, Self> {
+                    // Ici aussi, on utilise $crate pour la cohérence
+                    $crate::diagnostic::ModuleDiagnostic::new()
+                }
+            }
+        )*
 
         impl $name {
-            pub const fn kind(&self) -> ErrorKind {
-                match self {
-                    $(Self::$variant => ErrorKind::$kind),*
-                }
-            }
-
             pub const fn code(&self) -> u32 {
                 match self {
-                    $(Self::$variant => {
-                        // Validation stricte : ID doit être < 0xFFFF
-                        let _ = $crate::diagnostic::CodeDiagnostic::<$code>::new();
-                        $code
-                    }),*
+                    $(Self::$variant => $code),*
                 }
             }
-        }
-
-        impl core::fmt::Display for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                write!(f, "[{:04X}] {:?} ({:?})", self.code(), self, self.kind())
+            
+            // Permet de transformer l'enum en rapport d'erreur complet
+            #[track_caller]
+            pub fn report(&self) -> $crate::report::ErrorReport {
+                match self {
+                    $(Self::$variant => $crate::report::ErrorReport::new($variant::emit().inner)),*
+                }
             }
         }
     };
@@ -53,12 +50,16 @@ macro_rules! new_module_error {
 
 #[macro_export]
 macro_rules! error {
-    ($def:expr, $fmt:expr, $(, $arg:tt)*) => {
-        move || {}
+   // V1 : Clé => Valeur
+    ($result:expr, $key:expr => $val:expr) => {
+        $crate::context::ErrorContextExt::with_data($result, $key, $val)
     };
-}
 
-#[macro_export]
-macro_rules! bail {
-    ($def:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {};
+    // V2 : Message formaté (style anyhow)
+    ($result:expr, $($arg:tt)*) => {
+        $crate::context::ErrorContextExt::with_context(
+            $result, 
+            format!($($arg)*)
+        )
+    };
 }

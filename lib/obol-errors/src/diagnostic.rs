@@ -1,78 +1,97 @@
-//! A universal diagnostic engine for error.
-//! 
-//! This module defines the core components of the diagnostic system, including:
-//! 
-//! - `DiagnosticId` : A unique identifier for each diagnostic, represented as a `u32`.
-//! - `RawDiagnostic` : A raw diagnostic structure containing the diagnostic ID and an optional location
-//! - `Diagnostic` : A structured diagnostic that includes a `RawDiagnostic` and a phantom type for context.
+use core::marker::PhantomData;
 
-pub trait AsDiagnosticId {
-    type Id: Sized + Copy;
-    const ID: Self::Id;
-    const U32_ID: u32;
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub(crate) struct DiagnosticId(u32);
+pub struct DiagnosticId(pub u32);
 
 impl DiagnosticId {
     pub const fn new(id: u32) -> Self {
         Self(id)
     }
-
-    pub const fn as_u32(&self) -> u32 {
-        self.0
-    }
 }
 
 impl core::fmt::Display for DiagnosticId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:#X}", self.0)
+        write!(f, "E{:04X}", self.0)
     }
 }
 
-impl core::fmt::Debug for DiagnosticId {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:#X}", self.0)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct RawDiagnostic {
-    pub(crate) id: DiagnosticId,
-    pub(crate) location: &'static std::panic::Location<'static>,
+    pub id: DiagnosticId,
+    pub location: &'static core::panic::Location<'static>,
 }
 
-impl std::fmt::Display for RawDiagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "id: {}, location: {:?}", self.id, self.location)
+impl RawDiagnostic {
+    #[track_caller] // <--- 1. Indispensable ici
+    pub fn new(id: u32) -> Self {
+        Self {
+            id: DiagnosticId::new(id),
+            location: std::panic::Location::caller(),
+        }
     }
 }
 
-impl std::fmt::Debug for RawDiagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "id: {}, location: {:?}", self.id, self.location)
-    }
+pub const trait AsDiagnosticId {
+    const ID: u32;
 }
 
-pub struct Diagnostic<'a, T> {
+pub struct Diagnostic<T = ()> {
     pub inner: RawDiagnostic,
-    _marker: core::marker::PhantomData<&'a T>,
+    _marker: PhantomData<fn() -> T>, // fn() -> T évite les soucis de variance et de drop
 }
 
-impl<'a, T> Diagnostic<'a, T>
-where
-    T: AsDiagnosticId,
-    [(); const { (T::U32_ID < 0xFFFF) as usize }]:,
-{
-    pub const fn new(self) -> Self {
+impl<T> Diagnostic<T> {
+    #[track_caller]
+    pub const fn from_type() -> Self
+    where
+        T: AsDiagnosticId,
+        [(); const { (T::ID <= 0xFFFF) as usize }]:, // Erreur de compile si ID > 0xFFFF
+    {
         Self {
             inner: RawDiagnostic {
-                id: DiagnosticId::new(DiagnosticId::new(T::U32_ID).as_u32()),
-                location: &std::panic::Location::caller(),
+                id: DiagnosticId::new(T::ID),
+                location: std::panic::Location::caller(),
             },
-            _marker: core::marker::PhantomData,
+            _marker: PhantomData,
+        }
+    }
+
+    /// 2. APPROCHE DYNAMIQUE (Runtime)
+    /// Pour les IDs générés à la volée ou provenant de l'extérieur.
+    #[track_caller]
+    pub fn manual(id: u32) -> Self {
+        Self {
+            inner: RawDiagnostic::new(id),
+            _marker: PhantomData,
+        }
+    }
+}
+
+
+#[derive(PartialEq, Eq, core::marker::ConstParamTy)]
+pub enum StoreModule {
+    Inventory, // Gestion des stocks
+    Checkout,  // Panier et paiement
+    Identity,  // Utilisateurs et auth
+    Shipping,  // Logistique
+}
+
+pub struct ModuleDiagnostic<const M: StoreModule, T> {
+    pub inner: Diagnostic<T>,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<const M: StoreModule, T> ModuleDiagnostic<M, T> 
+where 
+    T: AsDiagnosticId,
+    [(); const { (T::ID <= 0xFFFF) as usize }]:,
+{
+    #[track_caller]
+    pub const fn new() -> Self {
+        Self {
+            inner: Diagnostic::<T>::from_type(),
+            _marker: PhantomData,
         }
     }
 }
