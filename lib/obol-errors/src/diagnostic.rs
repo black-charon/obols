@@ -68,57 +68,28 @@ impl<T> Diagnostic<T> {
     }
 }
 
-
-#[macro_export]
-macro_rules! define_modules {
-    (
-        // On capture la visibilité (ex: pub), le nom de l'enum, et les variantes avec leurs valeurs
-        $vis:vis enum $name:ident {
-            $($variant:ident => $val:expr),* $(,)?
-        }
-    ) => {
-        // On applique automatiquement les traits requis pour l'utilisation en const generic
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, core::marker::ConstParamTy)]
-        #[repr(u32)] // Essentiel pour le décalage de bits (bit-shifting) dans ModuleDiagnostic
-        $vis enum $name {
-            $(
-                $variant = $val
-            ),*
-        }
-
-        // Optionnel : On peut générer des méthodes utilitaires pour l'enum
-        impl $name {
-            /// Retourne l'identifiant numérique du module
-            pub const fn id(&self) -> u32 {
-                *self as u32
-            }
-            
-            /// Retourne le nom du module sous forme de chaîne de caractères
-            pub const fn name(&self) -> &'static str {
-                match self {
-                    $(Self::$variant => stringify!($variant)),*
-                }
-            }
-        }
-    };
-}
-
-
-pub struct ModuleDiagnostic<const M: StoreModule, T> {
+pub struct ModuleDiagnostic<const MODULE_ID: u32, T> {
     pub inner: Diagnostic<T>,
-    _marker: PhantomData<fn() -> T>,
 }
 
-impl<const M: StoreModule, T> ModuleDiagnostic<M, T> 
-where 
-    T: AsDiagnosticId,
+impl<const MODULE_ID: u32, T> ModuleDiagnostic<MODULE_ID, T>
+where
+    T: ~const AsDiagnosticId,
     [(); const { (T::ID <= 0xFFFF) as usize }]:,
 {
     #[track_caller]
     pub const fn new() -> Self {
+        // On combine l'ID du module et l'ID de l'erreur !
+        const COMBINED_ID: u32 = (MODULE_ID << 16) | T::ID;
+
         Self {
-            inner: Diagnostic::<T>::from_type(),
-            _marker: PhantomData,
+            inner: Diagnostic {
+                inner: RawDiagnostic {
+                    id: DiagnosticId::new(COMBINED_ID),
+                    location: std::panic::Location::caller(),
+                },
+                _marker: core::marker::PhantomData,
+            },
         }
     }
 }
