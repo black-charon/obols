@@ -6,6 +6,7 @@
 #![feature(min_generic_const_args)]
 #![feature(associated_type_defaults)]
 #![feature(const_convert)]
+#![feature(const_format_args)]
 
 pub mod context;
 pub mod diagnostic;

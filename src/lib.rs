@@ -9,5 +9,3 @@
 //!
 //! *   [`error`] : Le moteur de diagnostic universel.
 #![allow(incomplete_features)]
-#![feature(error_generic_member_access)]
-#![feature(lazy_type_alias)]
