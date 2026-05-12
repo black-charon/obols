@@ -69,13 +69,40 @@ impl<T> Diagnostic<T> {
 }
 
 
-#[derive(PartialEq, Eq, core::marker::ConstParamTy)]
-pub enum StoreModule {
-    Inventory, // Gestion des stocks
-    Checkout,  // Panier et paiement
-    Identity,  // Utilisateurs et auth
-    Shipping,  // Logistique
+#[macro_export]
+macro_rules! define_modules {
+    (
+        // On capture la visibilité (ex: pub), le nom de l'enum, et les variantes avec leurs valeurs
+        $vis:vis enum $name:ident {
+            $($variant:ident => $val:expr),* $(,)?
+        }
+    ) => {
+        // On applique automatiquement les traits requis pour l'utilisation en const generic
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, core::marker::ConstParamTy)]
+        #[repr(u32)] // Essentiel pour le décalage de bits (bit-shifting) dans ModuleDiagnostic
+        $vis enum $name {
+            $(
+                $variant = $val
+            ),*
+        }
+
+        // Optionnel : On peut générer des méthodes utilitaires pour l'enum
+        impl $name {
+            /// Retourne l'identifiant numérique du module
+            pub const fn id(&self) -> u32 {
+                *self as u32
+            }
+            
+            /// Retourne le nom du module sous forme de chaîne de caractères
+            pub const fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => stringify!($variant)),*
+                }
+            }
+        }
+    };
 }
+
 
 pub struct ModuleDiagnostic<const M: StoreModule, T> {
     pub inner: Diagnostic<T>,
