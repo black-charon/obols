@@ -36,12 +36,13 @@ macro_rules! new_error {
                     $(Self::$variant => $code),*
                 }
             }
-            
+
             // Permet de transformer l'enum en rapport d'erreur complet
             #[track_caller]
             pub fn report(&self) -> $crate::report::ErrorReport {
                 match self {
-                    $(Self::$variant => $crate::report::ErrorReport::new($variant::emit().inner)),*
+                    // FIX: Utilisation de .into() pour profiter de l'implémentation From
+                    $(Self::$variant => $variant::emit().into()),*
                 }
             }
         }
@@ -49,7 +50,7 @@ macro_rules! new_error {
 }
 
 #[macro_export]
-macro_rules! error {
+macro_rules! context { // FIX: Renommé pour éviter le conflit avec log::error!
    // V1 : Clé => Valeur
     ($result:expr, $key:expr => $val:expr) => {
         $crate::context::ErrorContextExt::with_data($result, $key, $val)
@@ -57,9 +58,10 @@ macro_rules! error {
 
     // V2 : Message formaté (style anyhow)
     ($result:expr, $($arg:tt)*) => {
-        $crate::context::ErrorContextExt::with_context(
+        // FIX: Utilisation de la version lazy pour protéger les performances du chemin Ok
+        $crate::context::ErrorContextExt::with_context_lazy(
             $result, 
-            format!($($arg)*)
+            || format!($($arg)*)
         )
     };
 }
