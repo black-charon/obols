@@ -1,0 +1,8 @@
+[package]
+name = "obol-models"
+description = "Obol-models Provides several models for Black Charon"
+authors = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]

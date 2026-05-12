@@ -1,17 +1,29 @@
 [package]
-name = "bc-obols"
-authors = ["Black Charon Teams"]
-description = "A Standard Library for Black Charon"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
 name = "obols"
-crate-type = ["rlib", "cdylib"]
+description = "A Standard Library for Black Charon"
+authors = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
 
 [dependencies]
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "*", feature = ["derive"] }
 serde_json = "*"
+
+[workspace]
+resolver = "3"
+members = ["lib/*"]
+
+[workspace.package]
+authors = ["BC Team"]
+version = "0.0.0"
+edition = "2024"
+
+[workspace.dependencies]
+obol-models = { path = "./lib/obol-models" }
+obol-primitives = { path = "./lib/obol-primitives" }
+obol-errors = { path = "./lib/obol-errors" }
+
+[profile.dev]
 
 [profile.release]
 opt-level = 3
